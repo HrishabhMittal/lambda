@@ -7,24 +7,39 @@
 #include <set>
 #include <stdexcept>
 #include <string>
-
+#include <utility>
 size_t new_name() {
     static size_t name = 256;
     return name++;
 }
 
-char map_to_char(size_t s) {
-    if (s < 256)
-        return static_cast<char>(s);
-    return '?';
+char map_to_char(int s) {
+    if (s >= 0 && s < 26)
+        return s + 'A';
+    s -= 26;
+    if (s >= 0 && s < 26)
+        return s + 'a';
+    throw std::runtime_error("unreachable.");
 }
-
+std::string map_to_str(size_t s) {
+    std::string out;
+    out.reserve(16);
+    const int base = 52;
+    while (s) {
+        out += map_to_char(s % base);
+        s /= base;
+    }
+    return out;
+}
 struct term {
     virtual ~term() = default;
     virtual std::set<size_t> FV() = 0;
-    virtual void substitute(size_t t1, std::shared_ptr<term> t2) = 0;
+
+    virtual void substitute(size_t t1, const std::unique_ptr<term> &t2) = 0;
     virtual void rename(size_t t1, size_t t2) = 0;
     virtual void print() = 0;
+
+    virtual std::unique_ptr<term> clone() const = 0;
 };
 
 struct value : term {
@@ -32,19 +47,25 @@ struct value : term {
 
     std::set<size_t> FV() override { return {variable}; }
 
-    void substitute(size_t t1, std::shared_ptr<term> t2) override {}
+    void substitute(size_t t1, const std::unique_ptr<term> &t2) override {}
 
     void rename(size_t t1, size_t t2) override {
         if (variable == t1)
             variable = t2;
     }
 
-    void print() override { std::cout << map_to_char(variable); }
+    void print() override { std::cout << map_to_str(variable); }
+
+    std::unique_ptr<term> clone() const override {
+        auto val = std::make_unique<value>();
+        val->variable = variable;
+        return val;
+    }
 };
 
 struct abstraction : term {
     size_t parameter;
-    std::shared_ptr<term> t;
+    std::unique_ptr<term> t;
 
     std::set<size_t> FV() override {
         auto fv = t->FV();
@@ -52,16 +73,15 @@ struct abstraction : term {
         return fv;
     }
 
-    void substitute(size_t t1, std::shared_ptr<term> t2) override {
+    void substitute(size_t t1, const std::unique_ptr<term> &t2) override {
         if (parameter != t1) {
-
             if (t2->FV().count(parameter)) {
                 rename(parameter, new_name());
             }
 
             auto child_val = dynamic_cast<value *>(t.get());
             if (child_val != nullptr && child_val->variable == t1) {
-                t = t2;
+                t = t2->clone();
             } else {
                 t->substitute(t1, t2);
             }
@@ -75,13 +95,20 @@ struct abstraction : term {
     }
 
     void print() override {
-        std::cout << "λ" << map_to_char(parameter) << ".";
+        std::cout << "λ" << map_to_str(parameter) << ".";
         t->print();
+    }
+
+    std::unique_ptr<term> clone() const override {
+        auto abs = std::make_unique<abstraction>();
+        abs->parameter = parameter;
+        abs->t = t->clone();
+        return abs;
     }
 };
 
 struct application : term {
-    std::shared_ptr<term> t, s;
+    std::unique_ptr<term> t, s;
 
     std::set<size_t> FV() override {
         auto fv = t->FV();
@@ -92,10 +119,10 @@ struct application : term {
         return fv;
     }
 
-    void substitute(size_t t1, std::shared_ptr<term> t2) override {
+    void substitute(size_t t1, const std::unique_ptr<term> &t2) override {
         auto tt = dynamic_cast<value *>(t.get());
         if (tt != nullptr && tt->variable == t1) {
-            t = t2;
+            t = t2->clone();
         } else {
             t->substitute(t1, t2);
         }
@@ -103,7 +130,7 @@ struct application : term {
         if (s != nullptr) {
             auto ts = dynamic_cast<value *>(s.get());
             if (ts != nullptr && ts->variable == t1) {
-                s = t2;
+                s = t2->clone();
             } else {
                 s->substitute(t1, t2);
             }
@@ -124,16 +151,25 @@ struct application : term {
             s->print();
         std::cout << ")";
     }
+
+    std::unique_ptr<term> clone() const override {
+        auto app = std::make_unique<application>();
+        app->t = t->clone();
+        if (s != nullptr) {
+            app->s = s->clone();
+        }
+        return app;
+    }
 };
 
-std::shared_ptr<term> parse_term(std::istream &in) {
+std::unique_ptr<term> parse_term(std::istream &in) {
     char c;
     in >> c;
     if (in.eof())
         return nullptr;
 
     if (c == '^') {
-        auto abs = std::make_shared<abstraction>();
+        auto abs = std::make_unique<abstraction>();
         in >> c;
         abs->parameter = c;
         in >> c;
@@ -143,7 +179,7 @@ std::shared_ptr<term> parse_term(std::istream &in) {
         abs->t = parse_term(in);
         return abs;
     } else if (c == '(') {
-        auto app = std::make_shared<application>();
+        auto app = std::make_unique<application>();
         app->t = parse_term(in);
         app->s = parse_term(in);
 
@@ -152,27 +188,33 @@ std::shared_ptr<term> parse_term(std::istream &in) {
             throw std::runtime_error(std::string("found ") + c + " expected )");
         return app;
     } else {
-        auto val = std::make_shared<value>();
+        auto val = std::make_unique<value>();
         val->variable = c;
         return val;
     }
 }
-bool step(std::shared_ptr<term> &node) {
+
+bool step(std::unique_ptr<term> &node) {
     if (!node)
         return false;
-    auto app = std::dynamic_pointer_cast<application>(node);
+
+    auto app = dynamic_cast<application *>(node.get());
     if (app) {
-        auto left_abs = std::dynamic_pointer_cast<abstraction>(app->t);
+        auto left_abs = dynamic_cast<abstraction *>(app->t.get());
         if (left_abs) {
-            auto m_val = std::dynamic_pointer_cast<value>(left_abs->t);
+            auto m_val = dynamic_cast<value *>(left_abs->t.get());
+
             if (m_val && m_val->variable == left_abs->parameter) {
-                node = app->s;
+
+                node = std::move(app->s);
             } else {
                 left_abs->t->substitute(left_abs->parameter, app->s);
-                node = left_abs->t;
+
+                node = std::move(left_abs->t);
             }
             return true;
         }
+
         if (step(app->t))
             return true;
         if (step(app->s))
@@ -180,12 +222,14 @@ bool step(std::shared_ptr<term> &node) {
 
         return false;
     }
-    auto abs = std::dynamic_pointer_cast<abstraction>(node);
+
+    auto abs = dynamic_cast<abstraction *>(node.get());
     if (abs) {
         return step(abs->t);
     }
     return false;
 }
+
 int main(int argc, char **argv) {
     if (argc != 2) {
         return 1;
@@ -199,12 +243,14 @@ int main(int argc, char **argv) {
     if (!ast) {
         return 3;
     }
+
     for (int i = 0; i < 10; i++) {
-        std::cout << "step " << i << ": " << std::endl;
+        std::cout << "step " << i << ": ";
         ast->print();
         std::cout << std::endl;
         if (!step(ast))
             break;
     }
+
     return 0;
 }
