@@ -1,1 +1,2 @@
-^x.^y.y
+#false# = ^t.^f.f
+((#false# a) b)

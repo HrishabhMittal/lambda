@@ -220,39 +220,3 @@ inline std::unique_ptr<term> parse_term(std::istream &in) {
         return val;
     }
 }
-
-inline bool step(std::unique_ptr<term> &node) {
-    if (!node)
-        return false;
-
-    auto app = dynamic_cast<application *>(node.get());
-    if (app) {
-        auto left_abs = dynamic_cast<abstraction *>(app->t.get());
-        if (left_abs) {
-            auto m_val = dynamic_cast<value *>(left_abs->t.get());
-
-            if (m_val && m_val->variable == left_abs->parameter) {
-
-                node = std::move(app->s);
-            } else {
-                left_abs->t->substitute(left_abs->parameter, app->s);
-
-                node = std::move(left_abs->t);
-            }
-            return true;
-        }
-
-        if (step(app->t))
-            return true;
-        if (step(app->s))
-            return true;
-
-        return false;
-    }
-
-    auto abs = dynamic_cast<abstraction *>(node.get());
-    if (abs) {
-        return step(abs->t);
-    }
-    return false;
-}

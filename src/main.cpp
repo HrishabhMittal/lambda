@@ -1,7 +1,7 @@
 #include "lambda.hpp"
+#include "parser.hpp"
 #include "util.hpp"
 #include <fstream>
-
 int main(int argc, char **argv) {
     if (argc != 2) {
         return 1;
@@ -10,19 +10,19 @@ int main(int argc, char **argv) {
     if (!file.is_open()) {
         return 2;
     }
-
-    auto ast = parse_term(file);
-    if (!ast) {
-        return 3;
-    }
-
-    for (int i = 0; i < 10; i++) {
-        std::cout << "step " << i << ": ";
-        ast->print();
-        std::cout << std::endl;
-        if (!step(ast))
+    while (true) {
+        auto res = parseStatement(file);
+        if (res.type == ResultType::EXPR) {
+            evaluate(res.t);
+            if (is_number(res.t.get())) {
+                std::cout<<lambda_to_number(res.t.get())<<std::endl;
+            } else {
+                res.t->print();
+                std::cout<<std::endl;
+            }
+        }
+        if (res.type == ResultType::RT_EOF)
             break;
     }
-
     return 0;
 }

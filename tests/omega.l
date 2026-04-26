@@ -1,1 +1,2 @@
-(^x.(x x) ^x.(x x))
+#omega# = ^x.(x x)
+(#omega# #omega#)
