@@ -1,4 +1,3 @@
-#include <cctype>
 #include <cstddef>
 #include <fstream>
 #include <iostream>
@@ -8,6 +7,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+
 size_t new_name() {
     static size_t name = 256;
     return name++;
@@ -19,7 +19,7 @@ char map_to_char(int s) {
     s -= 26;
     if (s >= 0 && s < 26)
         return s + 'a';
-    throw std::runtime_error("unreachable.");
+    std::unreachable();
 }
 std::string map_to_str(size_t s) {
     std::string out;
