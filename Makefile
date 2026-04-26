@@ -1,2 +1,2 @@
 all:
-	g++ -std=c++23 src/main.cpp -o main
+	g++ -std=c++23 src/main.cpp -o lambda

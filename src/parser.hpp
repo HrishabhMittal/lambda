@@ -120,12 +120,12 @@ inline bool step(std::unique_ptr<term> &node) {
     }
     return false;
 }
-inline void evaluate(std::unique_ptr<term> &node, ssize_t steps = 100) {
+inline void evaluate(std::unique_ptr<term> &node, ssize_t steps = -1) {
     if (steps < 0) {
         while (step(node)) {
         };
     } else {
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < steps; i++) {
             if (!step(node))
                 break;
         }
