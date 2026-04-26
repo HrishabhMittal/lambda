@@ -157,18 +157,54 @@ std::shared_ptr<term> parse_term(std::istream &in) {
         return val;
     }
 }
+bool step(std::shared_ptr<term> &node) {
+    if (!node)
+        return false;
+    auto app = std::dynamic_pointer_cast<application>(node);
+    if (app) {
+        auto left_abs = std::dynamic_pointer_cast<abstraction>(app->t);
+        if (left_abs) {
+            auto m_val = std::dynamic_pointer_cast<value>(left_abs->t);
+            if (m_val && m_val->variable == left_abs->parameter) {
+                node = app->s;
+            } else {
+                left_abs->t->substitute(left_abs->parameter, app->s);
+                node = left_abs->t;
+            }
+            return true;
+        }
+        if (step(app->t))
+            return true;
+        if (step(app->s))
+            return true;
 
-int main() {
-    std::ifstream file("tests/lambda.l");
-    if (!file.is_open()) {
+        return false;
+    }
+    auto abs = std::dynamic_pointer_cast<abstraction>(node);
+    if (abs) {
+        return step(abs->t);
+    }
+    return false;
+}
+int main(int argc, char **argv) {
+    if (argc != 2) {
         return 1;
+    }
+    std::ifstream file(argv[1]);
+    if (!file.is_open()) {
+        return 2;
     }
 
     auto ast = parse_term(file);
-    if (ast) {
+    if (!ast) {
+        return 3;
+    }
+    for (int i = 0; i < 10; i++) {
+        std::cout << "step " << i << ": " << std::endl;
         ast->print();
         std::cout << std::endl;
+        if (!step(ast))
+            break;
     }
-
     return 0;
 }
